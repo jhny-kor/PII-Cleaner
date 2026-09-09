@@ -60,6 +60,7 @@ PowerShell에서 실행합니다.
 
 ```powershell
 .\build-windows.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
 ```
 
 완료되면 `dist\PII-Cleaner-Setup.exe` 한 개가 만들어집니다. 내부적으로는 PyInstaller `onedir` 구조를 사용해 모델을 설치 폴더에 정상 배치한 뒤, Inno Setup이 이를 단일 설치파일로 만듭니다.

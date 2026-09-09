@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def _database_path() -> Path:
-    root = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local")) / "PII Log Cleaner"
+    root = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local")) / "PII Cleaner"
     root.mkdir(parents=True, exist_ok=True)
     return root / "history.db"
 

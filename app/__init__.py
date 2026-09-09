@@ -1,1 +1,1 @@
-"""PII Log Cleaner application package."""
+"""PII Cleaner application package."""

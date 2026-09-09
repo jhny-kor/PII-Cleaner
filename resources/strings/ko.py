@@ -1,6 +1,6 @@
 TEXT = {
-    "app_title": "PII Log Cleaner",
-    "version": "v1.1.0",
+    "app_title": "PII Cleaner",
+    "version": "v1.2.0",
     "select_target": "1. 대상 선택",
     "select_folder": "폴더 선택",
     "select_files": "파일 선택",
@@ -54,7 +54,7 @@ TEXT = {
     "history_status": "상태",
     "complete": "완료",
     "cancelled": "중지됨",
-    "original": "원본 로그",
+    "original": "원본 데이터",
     "deidentified": "비식별화 결과 (미리보기)",
     "found": "탐지 항목",
     "preview_note": "* 미리보기는 일부 데이터만 표시됩니다.",

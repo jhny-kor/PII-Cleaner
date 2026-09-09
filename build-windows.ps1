@@ -13,11 +13,11 @@ $PyInstallerDist = Join-Path $BuildRoot "p"
 $InstallerOutputDir = Join-Path $ProjectRoot "dist"
 $Requirements = Join-Path $ProjectRoot "requirements.txt"
 $EntryPoint = Join-Path $ProjectRoot "app\main.py"
-$InstallerScript = Join-Path $ProjectRoot "installer\PII-Log-Cleaner.iss"
+$InstallerScript = Join-Path $ProjectRoot "installer\PII-Cleaner.iss"
 $ProjectLicense = Join-Path $ProjectRoot "LICENSE"
 $ProjectNotice = Join-Path $ProjectRoot "NOTICE"
 $ThirdPartyNotices = Join-Path $ProjectRoot "THIRD_PARTY_NOTICES.md"
-$AppIcon = Join-Path $ProjectRoot "resources\icons\branding\pii-log-cleaner-icon.ico"
+$AppIcon = Join-Path $ProjectRoot "resources\icons\branding\pii-cleaner-icon.ico"
 $BundledModelPath = Join-Path $ProjectRoot "models\schift-ko-pii-v7"
 
 function Test-PythonRuntime {
@@ -178,7 +178,7 @@ $env:HF_HUB_OFFLINE = "1"
 $env:TRANSFORMERS_OFFLINE = "1"
 & $VenvPython -m PyInstaller `
     --noconfirm --clean --windowed `
-    --name "PII" `
+    --name "PII Cleaner" `
     --icon $AppIcon `
     --paths $ProjectRoot `
     --workpath $PyInstallerWork `
@@ -198,13 +198,13 @@ $env:TRANSFORMERS_OFFLINE = "1"
     $EntryPoint
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 빌드에 실패했습니다." }
 
-$AppExe = Join-Path $PyInstallerDist "PII\PII.exe"
+$AppExe = Join-Path $PyInstallerDist "PII Cleaner\PII Cleaner.exe"
 if (-not (Test-Path $AppExe -PathType Leaf)) { throw "빌드된 실행 파일을 찾지 못했습니다: $AppExe" }
 
 $Iscc = Resolve-Iscc
 & $Iscc $InstallerScript
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup 빌드에 실패했습니다." }
 
-$Installer = Join-Path $InstallerOutputDir "PII-Log-Cleaner-Setup.exe"
+$Installer = Join-Path $InstallerOutputDir "PII-Cleaner-Setup.exe"
 if (-not (Test-Path $Installer -PathType Leaf)) { throw "설치 파일을 찾지 못했습니다: $Installer" }
 Write-Host "완료: $Installer"

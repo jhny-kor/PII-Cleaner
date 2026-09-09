@@ -53,12 +53,13 @@ foreach ($target in @($weights, (Join-Path $Snapshot "model.safetensors.part-000
         self.assertIn("Apache License\n                           Version 2.0", license_text)
         self.assertIn("Copyright 2026 jhny-kor", notice_text)
         self.assertIn("Schift License v2.0", notice_text)
+        self.assertIn("PII Cleaner", notice_text)
         for variable in ("$ProjectLicense", "$ProjectNotice", "$ThirdPartyNotices"):
             self.assertIn(f'--add-data "{variable};."', build_script)
 
     def test_windows_build_selects_an_available_python_three_runtime_and_uses_brand_icon(self) -> None:
         build_script = (ROOT / "build-windows.ps1").read_text(encoding="utf-8")
-        installer_script = (ROOT / "installer" / "PII-Log-Cleaner.iss").read_text(encoding="utf-8")
+        installer_script = (ROOT / "installer" / "PII-Cleaner.iss").read_text(encoding="utf-8")
 
         self.assertIn('$script:PythonArguments = @("-3")', build_script)
         self.assertNotIn('"-3.11"', build_script)
@@ -69,12 +70,17 @@ foreach ($target in @($weights, (Join-Path $Snapshot "model.safetensors.part-000
         self.assertIn("--icon $AppIcon", build_script)
         self.assertIn('$PyInstallerWork = Join-Path $BuildRoot "w"', build_script)
         self.assertIn('$PyInstallerDist = Join-Path $BuildRoot "p"', build_script)
-        self.assertIn('--name "PII"', build_script)
+        self.assertIn('--name "PII Cleaner"', build_script)
+        self.assertIn('$InstallerScript = Join-Path $ProjectRoot "installer\\PII-Cleaner.iss"', build_script)
+        self.assertIn('$Installer = Join-Path $InstallerOutputDir "PII-Cleaner-Setup.exe"', build_script)
         self.assertIn('& $Iscc $InstallerScript', build_script)
         self.assertNotIn('--output-dir=', build_script)
-        self.assertIn("SetupIconFile=..\\resources\\icons\\branding\\pii-log-cleaner-icon.ico", installer_script)
-        self.assertIn('#define MyAppExeName "PII.exe"', installer_script)
-        self.assertIn('Source: "..\\build\\p\\PII\\*"', installer_script)
+        self.assertIn("SetupIconFile=..\\resources\\icons\\branding\\pii-cleaner-icon.ico", installer_script)
+        self.assertIn('#define MyAppName "PII Cleaner"', installer_script)
+        self.assertIn("DefaultDirName={autopf}\\PII Cleaner", installer_script)
+        self.assertIn("OutputBaseFilename=PII-Cleaner-Setup", installer_script)
+        self.assertIn('#define MyAppExeName "PII Cleaner.exe"', installer_script)
+        self.assertIn('Source: "..\\build\\p\\PII Cleaner\\*"', installer_script)
         self.assertNotIn("IconFilename=", installer_script)
 
     def test_bundled_model_parts_match_the_recorded_sha256(self) -> None:

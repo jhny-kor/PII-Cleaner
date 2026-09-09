@@ -17,7 +17,7 @@ except ImportError:  # Core checks stay runnable without GUI dependencies.
 class BrandAssetTests(unittest.TestCase):
     def test_provided_brand_assets_are_packaged(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        for name in ("pii-log-cleaner-icon.png", "pii-log-cleaner-wordmark.png", "pii-log-cleaner-icon.ico"):
+        for name in ("pii-cleaner-icon.png", "pii-cleaner-wordmark.png", "pii-cleaner-icon.ico"):
             self.assertTrue((root / "resources" / "icons" / "branding" / name).is_file(), name)
 
 
@@ -40,6 +40,7 @@ class WindowSmokeTests(unittest.TestCase):
             window = MainWindow(root / "missing-model", allow_regex_only=True)
             window.show()
             try:
+                self.assertEqual(window.windowTitle(), "PII Cleaner")
                 self.assertNotIn("기타 식별정보", window.detect_boxes)
                 self.assertEqual(len(window.detect_boxes), 10)
                 self._wait_until(lambda: window.detector is not None)

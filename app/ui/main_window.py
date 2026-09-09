@@ -104,7 +104,7 @@ class TitleBar(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(20, 0, 12, 0)
         layout.setSpacing(8)
-        wordmark_asset = _asset_path("branding/pii-log-cleaner-wordmark.png")
+        wordmark_asset = _asset_path("branding/pii-cleaner-wordmark.png")
         wordmark_pixmap = QPixmap(str(wordmark_asset)) if wordmark_asset.is_file() else QPixmap()
         if not wordmark_pixmap.isNull():
             wordmark = QLabel(self)
@@ -911,7 +911,7 @@ def _asset_path(name: str) -> Path:
 
 
 def _application_icon() -> QIcon:
-    for name in ("branding/pii-log-cleaner-icon.ico", "branding/pii-log-cleaner-icon.png"):
+    for name in ("branding/pii-cleaner-icon.ico", "branding/pii-cleaner-icon.png"):
         asset = _asset_path(name)
         if not asset.is_file():
             continue

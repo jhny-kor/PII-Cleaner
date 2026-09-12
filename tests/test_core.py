@@ -5,6 +5,7 @@ import threading
 import unittest
 from random import Random
 from pathlib import Path
+from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from app.core.masker import Masker, MaskingMode
@@ -12,6 +13,7 @@ from app.core.models import Detection
 from app.core.overlap_resolver import resolve_overlaps
 from app.core.policies import SUPPORTED_EXTENSIONS, is_supported_file
 from app.core.regex_detector import RegexDetector
+from app.processing.external_documents import ExternalDocumentProcessError, process_hwp
 from app.processing.file_processor import FileProcessor
 
 
@@ -56,6 +58,71 @@ class CoreRegressionTests(unittest.TestCase):
                     self.assertEqual(source.read_bytes(), original)
                     self.assertEqual(result.counts[kind], 1)
                     self.assertIn(f"[{kind}_1]", rewritten)
+
+    def test_legacy_office_outputs_are_converted_extensions(self) -> None:
+        self.assertEqual(FileProcessor.output_path(Path("sample.doc")), Path("sample_deid.docx"))
+        self.assertEqual(FileProcessor.output_path(Path("sample.XLS")), Path("sample_deid.xlsx"))
+
+    def test_hwp_dispatch_uses_kordoc_and_preserves_original(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "sample.hwp"
+            source.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1original hwp")
+
+            def fake_process(path: Path, destination: Path, _transform: object) -> None:
+                self.assertEqual(path, source)
+                destination.write_bytes(b"patched hwp")
+
+            with patch("app.processing.file_processor.process_hwp", side_effect=fake_process) as process:
+                FileProcessor(RegexDetector(), set(), Masker(), threading.Event()).deidentify_file(
+                    source, MaskingMode.AUTO, "", False, 10
+                )
+
+            process.assert_called_once()
+            self.assertEqual(source.read_bytes(), b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1original hwp")
+            self.assertEqual((Path(directory) / "sample_deid.hwp").read_bytes(), b"patched hwp")
+
+    def test_legacy_office_dispatch_uses_libreoffice_then_xml_rewriter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "sample.xls"
+            source.write_bytes(b"legacy xls")
+
+            def fake_process(path: Path, destination: Path, _transform: object) -> None:
+                self.assertEqual(path, source)
+                destination.write_bytes(b"converted xlsx")
+
+            with patch("app.processing.file_processor.process_legacy_office", side_effect=fake_process) as process:
+                FileProcessor(RegexDetector(), set(), Masker(), threading.Event()).deidentify_file(
+                    source, MaskingMode.AUTO, "", False, 10
+                )
+
+            process.assert_called_once()
+            self.assertEqual((Path(directory) / "sample_deid.xlsx").read_bytes(), b"converted xlsx")
+
+    def test_kordoc_roundtrip_rejects_unverified_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "sample.hwp"
+            source.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1original hwp")
+            calls = 0
+
+            def fake_run(command: list[str], **_kwargs: object) -> object:
+                nonlocal calls
+                calls += 1
+                output = Path(command[command.index("--output") + 1])
+                if calls == 1:
+                    output.write_text("phone=010-1234-5678", encoding="utf-8")
+                elif calls == 2:
+                    output.write_bytes(b"patched hwp")
+                else:
+                    output.write_text("phone=010-1234-5678", encoding="utf-8")
+                return type("Completed", (), {"returncode": 0})()
+
+            with patch("app.processing.external_documents._kordoc_command", return_value=["node", "kordoc"]), patch(
+                "app.processing.external_documents.subprocess.run", side_effect=fake_run
+            ), self.assertRaises(ExternalDocumentProcessError):
+                process_hwp(source, root / "result.hwp", lambda text: text.replace("010-1234-5678", "[PHONE_1]"))
+
+            self.assertEqual(source.read_bytes(), b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1original hwp")
 
     def test_overlap_resolution_matches_previous_selection_rules(self) -> None:
         random = Random(20260827)

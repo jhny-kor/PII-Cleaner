@@ -7,6 +7,7 @@ __pycache__/
 build/
 dist/
 *.spec
+/vendor/
 
 # The source-controlled model is split below Git hosting file-size limits.
 # build-windows.ps1 verifies and restores the ignored original before packaging.

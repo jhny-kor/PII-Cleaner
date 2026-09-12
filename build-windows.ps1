@@ -1,7 +1,10 @@
 ﻿[CmdletBinding()]
 param(
     [string]$PythonExe = "",
-    [string]$InnoSetupExe = ""
+    [string]$InnoSetupExe = "",
+    [string]$KordocRoot = "",
+    [string]$NodeRoot = "",
+    [string]$LibreOfficeRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +20,7 @@ $InstallerScript = Join-Path $ProjectRoot "installer\PII-Cleaner.iss"
 $ProjectLicense = Join-Path $ProjectRoot "LICENSE"
 $ProjectNotice = Join-Path $ProjectRoot "NOTICE"
 $ThirdPartyNotices = Join-Path $ProjectRoot "THIRD_PARTY_NOTICES.md"
+$DocumentRuntimeVerifier = Join-Path $ProjectRoot "tools\verify-kordoc-runtime.mjs"
 $AppIcon = Join-Path $ProjectRoot "resources\icons\branding\pii-cleaner-icon.ico"
 $BundledModelPath = Join-Path $ProjectRoot "models\schift-ko-pii-v7"
 
@@ -90,6 +94,74 @@ function Resolve-Iscc {
     throw "Inno Setup 6의 ISCC.exe를 찾지 못했습니다. 설치하거나 -InnoSetupExe로 경로를 지정해주세요."
 }
 
+function Resolve-RequiredDirectory {
+    param(
+        [string]$ExplicitPath,
+        [string]$EnvironmentName,
+        [string]$Label
+    )
+    $candidate = if ($ExplicitPath) { $ExplicitPath } else { [Environment]::GetEnvironmentVariable($EnvironmentName) }
+    if (-not $candidate) {
+        throw "$Label 경로가 필요합니다. -$Label 또는 $EnvironmentName을 지정해주세요."
+    }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+        throw "$Label 폴더를 찾지 못했습니다: $candidate"
+    }
+    return (Resolve-Path -LiteralPath $candidate).Path
+}
+
+function Assert-DocumentRuntimes {
+    $resolvedKordocRoot = Resolve-RequiredDirectory $KordocRoot "PII_CLEANER_KORDOC_ROOT" "KordocRoot"
+    $resolvedNodeRoot = Resolve-RequiredDirectory $NodeRoot "PII_CLEANER_NODE_ROOT" "NodeRoot"
+    $resolvedLibreOfficeRoot = Resolve-RequiredDirectory $LibreOfficeRoot "PII_CLEANER_LIBREOFFICE_ROOT" "LibreOfficeRoot"
+    $nodeExe = Join-Path $resolvedNodeRoot "node.exe"
+    $kordocPackage = Join-Path $resolvedKordocRoot "node_modules\kordoc\package.json"
+    $kordocLock = Join-Path $resolvedKordocRoot "package-lock.json"
+    if (-not (Test-Path -LiteralPath $nodeExe -PathType Leaf)) { throw "Node.js node.exe를 찾지 못했습니다: $nodeExe" }
+    if (-not (Test-Path -LiteralPath $kordocPackage -PathType Leaf)) { throw "Kordoc production node_modules가 없습니다: $kordocPackage" }
+    if (-not (Test-Path -LiteralPath $kordocLock -PathType Leaf)) { throw "Kordoc package-lock.json이 없습니다: $kordocLock" }
+    if (-not (Test-Path -LiteralPath (Join-Path $resolvedNodeRoot "LICENSE") -PathType Leaf)) {
+        throw "Node.js LICENSE 파일이 없습니다: $resolvedNodeRoot"
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $resolvedNodeRoot "README.md") -PathType Leaf)) {
+        throw "Node.js README.md 파일이 없습니다: $resolvedNodeRoot"
+    }
+    $soffice = @(
+        (Join-Path $resolvedLibreOfficeRoot "program\soffice.com"),
+        (Join-Path $resolvedLibreOfficeRoot "program\soffice.exe"),
+        (Join-Path $resolvedLibreOfficeRoot "program\soffice")
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $soffice) { throw "LibreOffice program\soffice 실행 파일을 찾지 못했습니다: $resolvedLibreOfficeRoot" }
+    $loLegal = Get-ChildItem -LiteralPath $resolvedLibreOfficeRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(LICENSE|NOTICE|readlicense)' } | Select-Object -First 1
+    if (-not $loLegal) { throw "LibreOffice 라이선스/고지 파일을 찾지 못했습니다: $resolvedLibreOfficeRoot" }
+
+    $nodeVersion = (& $nodeExe --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)') { throw "Node.js 버전을 확인하지 못했습니다: $nodeVersion" }
+    if ([int]$Matches[1] -lt 18) { throw "Kordoc에는 Node.js 18 이상이 필요합니다: $nodeVersion" }
+
+    $verificationOutput = & $nodeExe $DocumentRuntimeVerifier $resolvedKordocRoot 2>&1
+    $verificationOutput | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) { throw "Kordoc production 의존성·라이선스 검증에 실패했습니다." }
+
+    return [pscustomobject]@{
+        KordocRoot = $resolvedKordocRoot
+        NodeRoot = $resolvedNodeRoot
+        LibreOfficeRoot = $resolvedLibreOfficeRoot
+    }
+}
+
+function Copy-DirectoryContents {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    Get-ChildItem -LiteralPath $Source -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
+    }
+}
+
 function Restore-ModelWeights {
     param([string]$Snapshot)
     $weights = Join-Path $Snapshot "model.safetensors"
@@ -159,6 +231,7 @@ if ($missingLegalFiles) {
     throw "배포 고지 파일이 없습니다: $($missingLegalFiles -join ', ')"
 }
 if (-not (Test-Path $AppIcon -PathType Leaf)) { throw "앱 아이콘 파일을 찾지 못했습니다: $AppIcon" }
+$DocumentRuntimes = Assert-DocumentRuntimes
 New-Item -ItemType Directory -Force -Path $BuildRoot, $PyInstallerWork, $PyInstallerDist, $InstallerOutputDir | Out-Null
 
 if (-not (Test-Path (Join-Path $VenvRoot "Scripts\python.exe"))) {
@@ -200,6 +273,14 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller 빌드에 실패했습니다." }
 
 $AppExe = Join-Path $PyInstallerDist "PII Cleaner\PII Cleaner.exe"
 if (-not (Test-Path $AppExe -PathType Leaf)) { throw "빌드된 실행 파일을 찾지 못했습니다: $AppExe" }
+
+$EngineBundleRoot = Join-Path $PyInstallerDist "PII Cleaner\engines"
+if (Test-Path -LiteralPath $EngineBundleRoot -PathType Container) {
+    Remove-Item -LiteralPath $EngineBundleRoot -Recurse -Force
+}
+Copy-DirectoryContents $DocumentRuntimes.KordocRoot (Join-Path $EngineBundleRoot "kordoc")
+Copy-DirectoryContents $DocumentRuntimes.NodeRoot (Join-Path $EngineBundleRoot "node")
+Copy-DirectoryContents $DocumentRuntimes.LibreOfficeRoot (Join-Path $EngineBundleRoot "libreoffice")
 
 $Iscc = Resolve-Iscc
 & $Iscc $InstallerScript

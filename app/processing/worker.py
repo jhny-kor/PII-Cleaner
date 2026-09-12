@@ -11,6 +11,10 @@ from app.core.detector import PIIDetector
 from app.core.masker import Masker, MaskingMode
 from app.core.models import RunResult
 from app.processing.encoding import EncodingDetectionError
+from app.processing.external_documents import (
+    ExternalDocumentError,
+    ExternalEngineUnavailableError,
+)
 from app.processing.file_processor import FileProcessor, ProcessingStopped
 from app.processing.structured_documents import StructuredDocumentError
 from app.report.csv_report import write_csv_report
@@ -103,6 +107,10 @@ class ProcessingWorker(QObject):
 
     @staticmethod
     def _message_for(error: Exception) -> str:
+        if isinstance(error, ExternalEngineUnavailableError):
+            return "문서 엔진이 설치되지 않았습니다. 폐쇄망용 Kordoc과 LibreOffice를 확인해주세요."
+        if isinstance(error, ExternalDocumentError):
+            return "문서 엔진 처리 또는 안전성 검증에 실패했습니다. 원본은 변경되지 않았습니다."
         if isinstance(error, EncodingDetectionError):
             return "인코딩을 자동으로 확인하지 못했습니다."
         if isinstance(error, StructuredDocumentError):

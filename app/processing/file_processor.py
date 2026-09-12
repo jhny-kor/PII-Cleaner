@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import threading
@@ -13,6 +14,7 @@ from app.core.models import Detection, FileAnalysis, PreviewRow
 from app.core.overlap_resolver import resolve_overlaps
 
 from .encoding import detect_encoding
+from .external_documents import LEGACY_OFFICE_OUTPUTS, process_hwp, process_legacy_office
 from .structured_documents import STRUCTURED_DOCUMENT_EXTENSIONS, rewrite_document
 
 
@@ -42,18 +44,24 @@ class FileProcessor:
         analysis = FileAnalysis(path=str(path))
         output = self.output_path(path)
         temporary = output.with_name(f".{output.name}.{uuid.uuid4().hex}.tmp")
+        transform = lambda text: self._process_external_text(
+            text, analysis, mode, custom_text, preview_limit
+        )
         try:
             if backup:
                 backup_dir = path.parent / "backup"
                 backup_dir.mkdir(exist_ok=True)
                 shutil.copy2(path, backup_dir / path.name)
-            if path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS:
+            suffix = path.suffix.lower()
+            if suffix == ".hwp":
+                process_hwp(path, temporary, transform)
+            elif suffix in LEGACY_OFFICE_OUTPUTS:
+                process_legacy_office(path, temporary, transform)
+            elif suffix in STRUCTURED_DOCUMENT_EXTENSIONS:
                 rewrite_document(
                     path,
                     temporary,
-                    lambda text: self._process_text(
-                        text, analysis, mode, custom_text, preview_limit
-                    ),
+                    transform,
                 )
             else:
                 encoding = detect_encoding(path)
@@ -79,7 +87,28 @@ class FileProcessor:
 
     @staticmethod
     def output_path(path: Path) -> Path:
-        return path.with_name(f"{path.stem}_deid{path.suffix}")
+        suffix = LEGACY_OFFICE_OUTPUTS.get(path.suffix.lower(), path.suffix)
+        return path.with_name(f"{path.stem}_deid{suffix}")
+
+    def _process_external_text(
+        self,
+        text: str,
+        analysis: FileAnalysis,
+        mode: str,
+        custom_text: str,
+        preview_limit: int,
+    ) -> str:
+        return "".join(
+            self._process_text(
+                original,
+                analysis,
+                mode,
+                custom_text,
+                preview_limit,
+                detections,
+            )
+            for original, detections in self._segments(io.StringIO(text))
+        )
 
     def _segments(self, source: object) -> Iterator[tuple[str, list[Detection]]]:
         """Yield bounded text blocks, retaining a short look-ahead for giant single lines."""

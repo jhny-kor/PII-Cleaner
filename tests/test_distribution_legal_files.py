@@ -48,12 +48,17 @@ foreach ($target in @($weights, (Join-Path $Snapshot "model.safetensors.part-000
     def test_legal_files_are_present_and_packaged(self) -> None:
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
         notice_text = (ROOT / "NOTICE").read_text(encoding="utf-8")
+        third_party_text = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
         build_script = (ROOT / "build-windows.ps1").read_text(encoding="utf-8")
 
         self.assertIn("Apache License\n                           Version 2.0", license_text)
         self.assertIn("Copyright 2026 jhny-kor", notice_text)
         self.assertIn("Schift License v2.0", notice_text)
         self.assertIn("PII Cleaner", notice_text)
+        self.assertIn("Kordoc 4.13.1", notice_text)
+        self.assertIn("Kordoc 4.13.1", third_party_text)
+        self.assertIn("AGPL-3.0", third_party_text)
+        self.assertIn("LibreOffice", third_party_text)
         for variable in ("$ProjectLicense", "$ProjectNotice", "$ThirdPartyNotices"):
             self.assertIn(f'--add-data "{variable};."', build_script)
 
@@ -74,6 +79,11 @@ foreach ($target in @($weights, (Join-Path $Snapshot "model.safetensors.part-000
         self.assertIn('$InstallerScript = Join-Path $ProjectRoot "installer\\PII-Cleaner.iss"', build_script)
         self.assertIn('$Installer = Join-Path $InstallerOutputDir "PII-Cleaner-Setup.exe"', build_script)
         self.assertIn('& $Iscc $InstallerScript', build_script)
+        self.assertIn('$DocumentRuntimeVerifier = Join-Path $ProjectRoot "tools\\verify-kordoc-runtime.mjs"', build_script)
+        self.assertIn('Assert-DocumentRuntimes', build_script)
+        self.assertIn('Copy-DirectoryContents $DocumentRuntimes.KordocRoot', build_script)
+        self.assertIn('Copy-DirectoryContents $DocumentRuntimes.LibreOfficeRoot', build_script)
+        self.assertIn('KORDOC_OFFLINE', (ROOT / "app" / "processing" / "external_documents.py").read_text(encoding="utf-8"))
         self.assertNotIn('--output-dir=', build_script)
         self.assertIn("SetupIconFile=..\\resources\\icons\\branding\\pii-cleaner-icon.ico", installer_script)
         self.assertIn('#define MyAppName "PII Cleaner"', installer_script)

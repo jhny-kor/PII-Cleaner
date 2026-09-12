@@ -15,14 +15,45 @@ PII Cleaner의 자체 작성 소스 코드와 문서는 [Apache License 2.0](LIC
 ## 주요 기능
 
 - 제공된 화면 구성을 반영한 PySide6 단일 화면 UI: 파일/폴더 선택·드래그앤드롭 추가, 10개 탐지 항목, 치환 방식, 실행 요약, 이력, 3열 미리보기
-- 입력 파일: `.log`, `.txt`, `.out`, `.csv`, `.sql`, `.xls`, `.xlsx`, `.docx`, `.doc`, `.hwp`, `.hwpx`
+- 입력 파일: `.log`, `.txt`, `.out`, `.csv`, `.sql`, `.doc`, `.xls`, `.docx`, `.xlsx`, `.hwp`, `.hwpx`
 - 주민등록번호 형식, 국내 전화번호, 이메일, IPv4, URL, 날짜, 계좌번호 문맥값, API 키/비밀번호 문맥값의 정규식 탐지
 - 위치 기반 중첩 해결과 치환으로 원문 일부가 잘못 바뀌지 않도록 처리
 - 로컬 `schift-ko-pii-v7` 모델 어댑터: 실행 전에 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`을 설정하며 실행 중 모델을 내려받지 않음
 - `.docx`, `.xlsx`, `.hwpx` 문서의 XML 텍스트를 구조를 유지한 `_deid` 파일로 저장
+- `.doc` → `_deid.docx`, `.xls` → `_deid.xlsx`: 폐쇄망 LibreOffice로 변환한 뒤 기존 XML 재작성기로 비식별화
+- `.hwp` HWP 5.x: 폐쇄망 Kordoc 4.13.1의 Markdown 파싱·서식 보존 패치와 재파싱 검증 사용
 - 한 번의 스트리밍 처리로 분석·미리보기·별도 `_deid` 출력, 선택적 원본 백업, CSV 집계 보고서, PII를 저장하지 않는 로컬 SQLite 실행 이력
 
-`.doc`, `.xls`, `.hwp` 구형 바이너리 문서는 대상 목록에는 포함되지만, 원본 형식으로 안전하게 다시 저장하려면 해당 문서 편집기 또는 별도 변환기 연동이 필요합니다.
+`.doc`와 `.xls`는 LibreOffice가 만든 OOXML 결과를 출력합니다. 원본 바이너리 형식으로 되돌리지 않아 두 번째 변환 손실을 피하고, 원본은 항상 그대로 둡니다. `.hwp`는 HWP 5.x OLE2 바이너리만 수정하며 HWP 3.x/HWPML, 암호·DRM 문서는 안전을 위해 중단합니다. 이미지에만 있는 글자는 이번 경로에서 OCR하지 않습니다.
+
+## 폐쇄망 문서 엔진
+
+문서 엔진은 저장소나 npm에서 실행 중 내려받지 않고, 빌드 전에 같은 Windows x64 대상용으로 반입한 디렉터리를 설치파일에 포함합니다.
+
+- [Kordoc 4.13.1](https://github.com/chrisryugj/kordoc): `npm ci --omit=optional --ignore-scripts`로 production 의존성만 준비합니다. PDF·이미지·OCR 선택 의존성은 설치하지 않으며 앱도 Kordoc의 HWP 파싱·패치 명령만 호출합니다.
+- [Node.js](https://nodejs.org/en): Kordoc 실행용 공식 Windows x64 런타임(18 이상)을 별도 반입합니다. 버전과 SHA-256은 반입 기록에 고정해야 합니다.
+- [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/): 공식 stable Windows x64 설치 디렉터리 전체를 반입합니다. `.doc`/`.xls` 입력을 각각 `.docx`/`.xlsx`로 변환하는 데만 사용합니다.
+
+인터넷이 되는 준비 PC에서 Kordoc runtime 디렉터리를 만들고, 결과 디렉터리 전체(`package.json`, `package-lock.json`, `node_modules`)를 폐쇄망 빌드 PC로 복사합니다.
+
+```powershell
+mkdir D:\staging\kordoc-runtime
+cd D:\staging\kordoc-runtime
+npm init -y
+npm install --ignore-scripts --omit=optional --no-audit --no-fund kordoc@4.13.1
+node D:\src\PII-Log-Cleaner\tools\verify-kordoc-runtime.mjs D:\staging\kordoc-runtime
+```
+
+빌드 PC에는 npm 레지스트리 접근이 필요하지 않습니다. 다음 빌드 명령은 세 경로를 모두 필수로 받고, Kordoc 버전·lockfile·production 전이 의존성 라이선스·선택 의존성 미설치·Node/LibreOffice 법적 파일을 확인한 후 PyInstaller 결과의 `engines` 아래에 런타임을 복사합니다.
+
+```powershell
+.\build-windows.ps1 `
+  -KordocRoot D:\staging\kordoc-runtime `
+  -NodeRoot D:\staging\node-v22.x.y-win-x64 `
+  -LibreOfficeRoot "D:\staging\LibreOffice"
+```
+
+경로는 `PII_CLEANER_KORDOC_ROOT`, `PII_CLEANER_NODE_ROOT`, `PII_CLEANER_LIBREOFFICE_ROOT` 환경변수로도 지정할 수 있습니다. 누락되거나 검증에 실패하면 Python 패키지 설치와 installer 생성 전에 중단합니다. 실행 중에는 Kordoc subprocess에 `KORDOC_OFFLINE=1`, `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`을 고정하고, `shell=False`로 호출합니다.
 
 ## v1.1.0 모델 변경
 
@@ -55,12 +86,13 @@ PII Cleaner의 자체 작성 소스 코드와 문서는 [Apache License 2.0](LIC
 빌드 머신 준비물:
 
 1. 64비트 Python 3.11 권장(3.10 이상 지원)과 Inno Setup 6
+2. 위의 Kordoc production runtime, 공식 Node.js Windows x64 런타임, 공식 LibreOffice Windows x64 설치 디렉터리
 
 PowerShell에서 실행합니다.
 
 ```powershell
-.\build-windows.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
+.\build-windows.ps1 -KordocRoot D:\staging\kordoc-runtime -NodeRoot D:\staging\node-v22.x.y-win-x64 -LibreOfficeRoot "D:\staging\LibreOffice"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1 -KordocRoot D:\staging\kordoc-runtime -NodeRoot D:\staging\node-v22.x.y-win-x64 -LibreOfficeRoot "D:\staging\LibreOffice"
 ```
 
 완료되면 `dist\PII-Cleaner-Setup.exe` 한 개가 만들어집니다. 내부적으로는 PyInstaller `onedir` 구조를 사용해 모델을 설치 폴더에 정상 배치한 뒤, Inno Setup이 이를 단일 설치파일로 만듭니다.

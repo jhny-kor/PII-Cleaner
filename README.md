@@ -34,7 +34,7 @@ PII Cleaner의 자체 작성 소스 코드와 문서는 [Apache License 2.0](LIC
 - [Node.js](https://nodejs.org/en): Kordoc 실행용 공식 Windows x64 런타임(18 이상)을 별도 반입합니다. 버전과 SHA-256은 반입 기록에 고정해야 합니다.
 - [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/): 공식 stable Windows x64 설치 디렉터리 전체를 반입합니다. `.doc`/`.xls` 입력을 각각 `.docx`/`.xlsx`로 변환하는 데만 사용합니다.
 
-인터넷이 되는 준비 PC에서 Kordoc runtime 디렉터리를 만들고, 결과 디렉터리 전체(`package.json`, `package-lock.json`, `node_modules`)를 폐쇄망 빌드 PC로 복사합니다.
+인터넷이 되는 준비 PC에서 Kordoc runtime 디렉터리를 만들고, 결과 디렉터리 전체(`package.json`, `package-lock.json`, `node_modules`)를 폐쇄망 빌드 PC의 `vendor\kordoc-runtime\`으로 복사합니다. 공식 Node.js Windows x64 압축 해제 디렉터리는 `vendor\node\`, LibreOffice 공식 Windows x64 설치 디렉터리는 `vendor\libreoffice\`로 복사합니다. 이 세 디렉터리는 바이너리이므로 Git에 커밋하지 않습니다.
 
 ```powershell
 mkdir D:\staging\kordoc-runtime
@@ -44,16 +44,13 @@ npm install --ignore-scripts --omit=optional --no-audit --no-fund kordoc@4.13.1
 node D:\src\PII-Log-Cleaner\tools\verify-kordoc-runtime.mjs D:\staging\kordoc-runtime
 ```
 
-빌드 PC에는 npm 레지스트리 접근이 필요하지 않습니다. 다음 빌드 명령은 세 경로를 모두 필수로 받고, Kordoc 버전·lockfile·production 전이 의존성 라이선스·선택 의존성 미설치·Node/LibreOffice 법적 파일을 확인한 후 PyInstaller 결과의 `engines` 아래에 런타임을 복사합니다.
+빌드 PC에는 npm 레지스트리 접근이 필요하지 않습니다. `vendor` 기본 경로가 준비되면 다음 한 줄로 빌드할 수 있습니다. 스크립트는 Kordoc 버전·lockfile·production 전이 의존성 라이선스·선택 의존성 미설치·Node/LibreOffice 법적 파일을 확인한 후 PyInstaller 결과의 `engines` 아래로 복사하고, 복사된 경로에서 Kordoc·LibreOffice 실행 검증을 다시 합니다.
 
 ```powershell
-.\build-windows.ps1 `
-  -KordocRoot D:\staging\kordoc-runtime `
-  -NodeRoot D:\staging\node-v22.x.y-win-x64 `
-  -LibreOfficeRoot "D:\staging\LibreOffice"
+.\build-windows.ps1
 ```
 
-경로는 `PII_CLEANER_KORDOC_ROOT`, `PII_CLEANER_NODE_ROOT`, `PII_CLEANER_LIBREOFFICE_ROOT` 환경변수로도 지정할 수 있습니다. 누락되거나 검증에 실패하면 Python 패키지 설치와 installer 생성 전에 중단합니다. 실행 중에는 Kordoc subprocess에 `KORDOC_OFFLINE=1`, `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`을 고정하고, `shell=False`로 호출합니다.
+기본 경로 대신 `-KordocRoot`, `-NodeRoot`, `-LibreOfficeRoot` 인자 또는 `PII_CLEANER_KORDOC_ROOT`, `PII_CLEANER_NODE_ROOT`, `PII_CLEANER_LIBREOFFICE_ROOT` 환경변수로 지정할 수도 있습니다. 누락되거나 검증에 실패하면 Python 패키지 설치와 installer 생성 전에 중단합니다. 실행 중에는 Kordoc subprocess에 `KORDOC_OFFLINE=1`, `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`을 고정하고, `shell=False`로 호출합니다.
 
 ## v1.1.0 모델 변경
 
@@ -86,13 +83,13 @@ node D:\src\PII-Log-Cleaner\tools\verify-kordoc-runtime.mjs D:\staging\kordoc-ru
 빌드 머신 준비물:
 
 1. 64비트 Python 3.11 권장(3.10 이상 지원)과 Inno Setup 6
-2. 위의 Kordoc production runtime, 공식 Node.js Windows x64 런타임, 공식 LibreOffice Windows x64 설치 디렉터리
+2. `vendor\kordoc-runtime`, `vendor\node`, `vendor\libreoffice`에 둔 Kordoc production runtime, 공식 Node.js Windows x64 런타임, 공식 LibreOffice Windows x64 설치 디렉터리
 
 PowerShell에서 실행합니다.
 
 ```powershell
-.\build-windows.ps1 -KordocRoot D:\staging\kordoc-runtime -NodeRoot D:\staging\node-v22.x.y-win-x64 -LibreOfficeRoot "D:\staging\LibreOffice"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1 -KordocRoot D:\staging\kordoc-runtime -NodeRoot D:\staging\node-v22.x.y-win-x64 -LibreOfficeRoot "D:\staging\LibreOffice"
+.\build-windows.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-windows.ps1
 ```
 
 완료되면 `dist\PII-Cleaner-Setup.exe` 한 개가 만들어집니다. 내부적으로는 PyInstaller `onedir` 구조를 사용해 모델을 설치 폴더에 정상 배치한 뒤, Inno Setup이 이를 단일 설치파일로 만듭니다.

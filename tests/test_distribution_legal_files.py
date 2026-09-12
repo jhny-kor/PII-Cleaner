@@ -81,6 +81,8 @@ foreach ($target in @($weights, (Join-Path $Snapshot "model.safetensors.part-000
         self.assertIn('& $Iscc $InstallerScript', build_script)
         self.assertIn('$DocumentRuntimeVerifier = Join-Path $ProjectRoot "tools\\verify-kordoc-runtime.mjs"', build_script)
         self.assertIn('Assert-DocumentRuntimes', build_script)
+        self.assertIn('$DefaultKordocRoot = Join-Path $ProjectRoot "vendor\\kordoc-runtime"', build_script)
+        self.assertIn('Assert-BundledDocumentRuntimes $EngineBundleRoot', build_script)
         self.assertIn('Copy-DirectoryContents $DocumentRuntimes.KordocRoot', build_script)
         self.assertIn('Copy-DirectoryContents $DocumentRuntimes.LibreOfficeRoot', build_script)
         self.assertIn('KORDOC_OFFLINE', (ROOT / "app" / "processing" / "external_documents.py").read_text(encoding="utf-8"))

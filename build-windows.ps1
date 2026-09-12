@@ -23,6 +23,9 @@ $ThirdPartyNotices = Join-Path $ProjectRoot "THIRD_PARTY_NOTICES.md"
 $DocumentRuntimeVerifier = Join-Path $ProjectRoot "tools\verify-kordoc-runtime.mjs"
 $AppIcon = Join-Path $ProjectRoot "resources\icons\branding\pii-cleaner-icon.ico"
 $BundledModelPath = Join-Path $ProjectRoot "models\schift-ko-pii-v7"
+$DefaultKordocRoot = Join-Path $ProjectRoot "vendor\kordoc-runtime"
+$DefaultNodeRoot = Join-Path $ProjectRoot "vendor\node"
+$DefaultLibreOfficeRoot = Join-Path $ProjectRoot "vendor\libreoffice"
 
 function Test-PythonRuntime {
     param(
@@ -98,11 +101,18 @@ function Resolve-RequiredDirectory {
     param(
         [string]$ExplicitPath,
         [string]$EnvironmentName,
-        [string]$Label
+        [string]$Label,
+        [string]$DefaultPath
     )
-    $candidate = if ($ExplicitPath) { $ExplicitPath } else { [Environment]::GetEnvironmentVariable($EnvironmentName) }
+    $candidate = if ($ExplicitPath) {
+        $ExplicitPath
+    } elseif ([Environment]::GetEnvironmentVariable($EnvironmentName)) {
+        [Environment]::GetEnvironmentVariable($EnvironmentName)
+    } else {
+        $DefaultPath
+    }
     if (-not $candidate) {
-        throw "$Label 경로가 필요합니다. -$Label 또는 $EnvironmentName을 지정해주세요."
+        throw "$Label 경로가 필요합니다. -$Label, $EnvironmentName 또는 기본 vendor 경로를 확인해주세요."
     }
     if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
         throw "$Label 폴더를 찾지 못했습니다: $candidate"
@@ -111,9 +121,9 @@ function Resolve-RequiredDirectory {
 }
 
 function Assert-DocumentRuntimes {
-    $resolvedKordocRoot = Resolve-RequiredDirectory $KordocRoot "PII_CLEANER_KORDOC_ROOT" "KordocRoot"
-    $resolvedNodeRoot = Resolve-RequiredDirectory $NodeRoot "PII_CLEANER_NODE_ROOT" "NodeRoot"
-    $resolvedLibreOfficeRoot = Resolve-RequiredDirectory $LibreOfficeRoot "PII_CLEANER_LIBREOFFICE_ROOT" "LibreOfficeRoot"
+    $resolvedKordocRoot = Resolve-RequiredDirectory $KordocRoot "PII_CLEANER_KORDOC_ROOT" "KordocRoot" $DefaultKordocRoot
+    $resolvedNodeRoot = Resolve-RequiredDirectory $NodeRoot "PII_CLEANER_NODE_ROOT" "NodeRoot" $DefaultNodeRoot
+    $resolvedLibreOfficeRoot = Resolve-RequiredDirectory $LibreOfficeRoot "PII_CLEANER_LIBREOFFICE_ROOT" "LibreOfficeRoot" $DefaultLibreOfficeRoot
     $nodeExe = Join-Path $resolvedNodeRoot "node.exe"
     $kordocPackage = Join-Path $resolvedKordocRoot "node_modules\kordoc\package.json"
     $kordocLock = Join-Path $resolvedKordocRoot "package-lock.json"
@@ -160,6 +170,36 @@ function Copy-DirectoryContents {
     Get-ChildItem -LiteralPath $Source -Force | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
     }
+}
+
+function Assert-BundledDocumentRuntimes {
+    param([string]$Root)
+    $nodeExe = Join-Path $Root "node\node.exe"
+    $kordocRoot = Join-Path $Root "kordoc"
+    $kordocCli = Join-Path $kordocRoot "node_modules\kordoc\dist\cli.js"
+    $soffice = @(
+        (Join-Path $Root "libreoffice\program\soffice.com"),
+        (Join-Path $Root "libreoffice\program\soffice.exe"),
+        (Join-Path $Root "libreoffice\program\soffice")
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    $missing = @($nodeExe, $kordocCli, (Join-Path $kordocRoot "package-lock.json")) |
+        Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
+    if ($missing) { throw "번들된 문서 엔진 파일이 누락되었습니다: $($missing -join ', ')" }
+    if (-not $soffice) { throw "번들된 LibreOffice 실행 파일이 누락되었습니다: $Root\libreoffice" }
+
+    $verificationOutput = & $nodeExe $DocumentRuntimeVerifier $kordocRoot 2>&1
+    $verificationOutput | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) { throw "번들된 Kordoc production 의존성·라이선스 검증에 실패했습니다." }
+
+    $kordocVersion = (& $nodeExe $kordocCli --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $kordocVersion -ne "4.13.1") {
+        throw "번들된 Kordoc 실행 검증에 실패했습니다: $kordocVersion"
+    }
+    $libreOfficeVersion = (& $soffice --headless --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $libreOfficeVersion) {
+        throw "번들된 LibreOffice 실행 검증에 실패했습니다."
+    }
+    Write-Host "번들 문서 엔진 확인: Kordoc $kordocVersion / $libreOfficeVersion"
 }
 
 function Restore-ModelWeights {
@@ -281,6 +321,7 @@ if (Test-Path -LiteralPath $EngineBundleRoot -PathType Container) {
 Copy-DirectoryContents $DocumentRuntimes.KordocRoot (Join-Path $EngineBundleRoot "kordoc")
 Copy-DirectoryContents $DocumentRuntimes.NodeRoot (Join-Path $EngineBundleRoot "node")
 Copy-DirectoryContents $DocumentRuntimes.LibreOfficeRoot (Join-Path $EngineBundleRoot "libreoffice")
+Assert-BundledDocumentRuntimes $EngineBundleRoot
 
 $Iscc = Resolve-Iscc
 & $Iscc $InstallerScript

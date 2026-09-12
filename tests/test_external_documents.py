@@ -9,6 +9,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from app.processing.external_documents import (
     ExternalDocumentProcessError,
+    _kordoc_command,
+    _libreoffice_executable,
     process_hwp,
     process_legacy_office,
 )
@@ -18,6 +20,23 @@ HWP5_HEADER = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 
 class ExternalDocumentTests(unittest.TestCase):
+    def test_bundled_engine_paths_are_resolved_before_system_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            node = root / "engines" / "node" / "node.exe"
+            cli = root / "engines" / "kordoc" / "node_modules" / "kordoc" / "dist" / "cli.js"
+            soffice = root / "engines" / "libreoffice" / "program" / "soffice.com"
+            for path in (node, cli, soffice):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+
+            with patch("app.processing.external_documents.bundle_root", return_value=root), patch(
+                "app.processing.external_documents.shutil.which"
+            ) as which:
+                self.assertEqual(_kordoc_command(), [str(node), str(cli)])
+                self.assertEqual(_libreoffice_executable(), soffice)
+            which.assert_not_called()
+
     def test_hwp_roundtrip_verifies_the_edited_markdown_and_uses_offline_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
